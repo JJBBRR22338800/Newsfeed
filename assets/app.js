@@ -1,21 +1,286 @@
 (() => {
   const $ = id => document.getElementById(id);
   let data = null, selected = 'Alle', visibleCount = 30, paused = false, tickerItems = [], tickerIndex = 0;
-  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  const fmt = ts => new Intl.DateTimeFormat('de-DE',{dateStyle:'short',timeStyle:'short'}).format(new Date(ts*1000));
-  function weatherCode(code){const map={0:['☀️','Klar'],1:['🌤️','Überwiegend klar'],2:['⛅','Teilweise bewölkt'],3:['☁️','Bedeckt'],45:['🌫️','Nebel'],48:['🌫️','Nebel'],51:['🌦️','Leichter Nieselregen'],53:['🌦️','Nieselregen'],55:['🌧️','Starker Nieselregen'],61:['🌧️','Leichter Regen'],63:['🌧️','Regen'],65:['🌧️','Starker Regen'],71:['🌨️','Leichter Schneefall'],73:['🌨️','Schneefall'],75:['❄️','Starker Schneefall'],80:['🌦️','Regenschauer'],81:['🌧️','Regenschauer'],82:['⛈️','Starke Regenschauer'],95:['⛈️','Gewitter'],96:['⛈️','Gewitter mit Hagel'],99:['⛈️','Starkes Gewitter']};return map[code]||['🌡️','Wetterlage'];}
-  function renderWeather(w){ if(!w?.current){$('weatherNow').textContent='Wetterdaten derzeit nicht verfügbar.';$('weatherSummary').textContent='Daten derzeit nicht verfügbar';return;} const c=w.current, daily=w.daily||{}, desc=weatherCode(c.weather_code); $('weatherPlace').textContent=data.location?.name||'Kamp-Lintfort'; $('weatherSummary').textContent=`${Math.round(c.temperature_2m)}°C · ${desc[1]}`; $('weatherIcon').textContent=desc[0]; $('weatherNow').innerHTML=`<div class="temp">${Math.round(c.temperature_2m)}°<span>C</span></div><div class="weather-desc">${esc(desc[1])}<br><span class="muted">Gefühlt ${Math.round(c.apparent_temperature)}°C · Wind ${Math.round(c.wind_speed_10m)} km/h</span></div>`; const days=daily.time||[]; $('weatherDays').innerHTML=days.slice(0,3).map((d,i)=>{const x=weatherCode(daily.weather_code?.[i]);return `<div class="day"><span>${new Intl.DateTimeFormat('de-DE',{weekday:'short'}).format(new Date(d+'T12:00:00'))}</span><b>${x[0]} ${Math.round(daily.temperature_2m_max?.[i]??0)}°</b><small>${Math.round(daily.temperature_2m_min?.[i]??0)}° · Regen ${daily.precipitation_probability_max?.[i]??'–'}%</small></div>`}).join(''); }
-  function renderWarnings(){const list=data?.warnings||[];$('warningSummary').textContent=list.length?`${list.length} Warnung(en) gemeldet`:(data?.warningError?'Status nicht verfügbar':'Keine Warnung gemeldet');if(!list.length){$('warnings').innerHTML=`<div class="no-warning">${data?.warningError?'⚠ '+esc(data.warningError):'✓ Keine Warnung vom angebundenen Dienst gemeldet.'}</div><p class="small-text">Warnungen bitte zusätzlich beim <a href="https://www.dwd.de/DE/wetter/warnungen_gemeinden/warnWetter_node.html" target="_blank" rel="noopener">DWD</a> prüfen.</p>`;return;} $('warnings').innerHTML=list.slice(0,8).map(w=>`<div class="warning"><b>${esc(w.headline)}</b><p>${esc(w.description||'Bitte Details beim DWD prüfen.')}</p><small>Warnstufe ${esc(w.level)}${w.end?' · bis '+esc(new Date(w.end*1000).toLocaleString('de-DE')):''}</small></div>`).join('');}
-  function renderFeeds(){const feeds=data?.feeds||[];$('feedStatus').innerHTML=feeds.map(f=>`<div class="feed-row"><span class="feed-dot ${f.ok?'ok':'bad'}"></span><span title="${esc(f.category||'')}">${esc(f.name)}<small class="feed-last">${f.checkedAt?'Geprüft '+esc(fmt(Date.parse(f.checkedAt)/1000)) :''}</small></span><small>${f.ok?`${f.count} Meldungen`:'Fehler'}</small></div>`).join('')||'Keine Feed-Informationen.';}
-  function renderDynamicCategories(){const host=$('categories');if(!host||!data)return;const existing=new Set([...host.querySelectorAll('[data-category]')].map(b=>b.dataset.category));const categories=[...new Set((data.items||[]).map(n=>n.category).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'de'));categories.forEach(cat=>{if(existing.has(cat))return;const b=document.createElement('button');b.className='category';b.dataset.category=cat;b.textContent=cat;host.appendChild(b);});}
-  function renderNews(){const all=data?.items||[], q=$('search').value.trim().toLocaleLowerCase('de-DE'), sort=$('sort').value; let filtered=all.filter(n=>(selected==='Alle'||n.category===selected)&&(!q||[n.title,n.description,n.source,n.category].join(' ').toLocaleLowerCase('de-DE').includes(q)));filtered.sort((a,b)=>sort==='new'?b.timestamp-a.timestamp:a.timestamp-b.timestamp);$('resultCount').textContent=`${filtered.length} Meldungen`; $('news').innerHTML=filtered.slice(0,visibleCount).map(n=>`<article class="news-card"><div class="news-meta"><span class="pill">${esc(n.category)}</span><span>${esc(n.source)}</span><time datetime="${esc(n.date)}">${esc(fmt(n.timestamp))}</time></div><h3><a href="${esc(n.url)}" target="_blank" rel="noopener noreferrer">${esc(n.title)}</a></h3>${n.description?`<p>${esc(n.description)}</p>`:''}<a class="read-link" href="${esc(n.url)}" target="_blank" rel="noopener noreferrer">Originalmeldung öffnen ↗</a></article>`).join('')||'<div class="empty">Keine passenden Meldungen gefunden. Filter oder Suchbegriff ändern.</div>'; $('loadMore').hidden=filtered.length<=visibleCount; $('loadMore').textContent=`Weitere Meldungen (${Math.max(0,filtered.length-visibleCount)})`; tickerItems=all.slice(0,40); if(tickerIndex>=tickerItems.length)tickerIndex=0; renderTicker(); }
-  function renderTicker(){const el=$('tickerText');if(!tickerItems.length){el.textContent='Noch keine Meldungen im Cache – bitte Cronjob ausführen.';return;}const content=tickerItems.map(n=>`<span class="ticker-item"><b>${esc(n.category)}</b> ${esc(n.title)} <a href="${esc(n.url)}" target="_blank" rel="noopener">↗</a></span>`).join('<span class="ticker-separator"> • </span>');el.innerHTML=content+'<span class="ticker-separator"> • </span>'+content;el.classList.toggle('paused',paused);}
-  async function load(){ $('status').textContent='Aktualisiere Ansicht …'; try{const r=await fetch('api.php?v='+Date.now(),{cache:'no-store'});if(!r.ok)throw Error('Cache fehlt');data=await r.json();$('updated').textContent='Datenstand: '+new Date(data.updatedAt).toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'});$('footerTime').textContent='Letzte Serveraktualisierung '+new Date(data.updatedAt).toLocaleString('de-DE');$('status').textContent='Cache verfügbar';renderWeather(data.weather);renderWarnings();renderFeeds();renderDynamicCategories();renderNews();}catch(e){$('status').textContent='Noch nicht eingerichtet';$('news').innerHTML='<div class="empty"><b>Noch keine Cache-Datei vorhanden.</b><br>Bitte cron.php einmalig über den IONOS-Cronjob oder per PHP-CLI ausführen. Details stehen in README.md.</div>';}}
-  $('categories').addEventListener('click',e=>{const b=e.target.closest('[data-category]');if(!b)return;selected=b.dataset.category;document.querySelectorAll('.category').forEach(x=>x.classList.toggle('active',x===b));visibleCount=30;renderNews();});$('search').addEventListener('input',()=>{visibleCount=30;renderNews();});$('sort').addEventListener('change',renderNews);$('loadMore').addEventListener('click',()=>{visibleCount+=30;renderNews();});$('refresh').addEventListener('click',load);$('tickerPause').addEventListener('click',()=>{paused=!paused;$('tickerPause').textContent=paused?'▶':'Ⅱ';$('tickerText').classList.toggle('paused',paused);});$('themeToggle').addEventListener('click',()=>{const dark=document.documentElement.dataset.theme!=='dark';document.documentElement.dataset.theme=dark?'dark':'light';try{localStorage.setItem('newscenter-theme',dark?'dark':'light')}catch(e){}});try{const t=localStorage.getItem('newscenter-theme');if(t)document.documentElement.dataset.theme=t;}catch(e){}
-  const applyTickerSettings=()=>{const speed=Number($('tickerSpeed')?.value||100), size=Number($('tickerSize')?.value||17);document.documentElement.style.setProperty('--ticker-duration',`${speed}s`);document.documentElement.style.setProperty('--ticker-font-size',`${size}px`);try{localStorage.setItem('newscenter-ticker-speed',String(speed));localStorage.setItem('newscenter-ticker-size',String(size));}catch(e){}};
-  try{const speed=localStorage.getItem('newscenter-ticker-speed'),size=localStorage.getItem('newscenter-ticker-size');if(speed&&$('tickerSpeed'))$('tickerSpeed').value=speed;if(size&&$('tickerSize'))$('tickerSize').value=size;}catch(e){}
-  $('tickerSpeed')?.addEventListener('change',applyTickerSettings);$('tickerSize')?.addEventListener('change',applyTickerSettings);applyTickerSettings();
+
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({
+    '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'
+  }[c]));
+
+  const fmt = ts => new Intl.DateTimeFormat('de-DE', {
+    dateStyle:'short', timeStyle:'short'
+  }).format(new Date(ts * 1000));
+
+  function weatherCode(code) {
+    const map = {
+      0:['☀️','Klar'], 1:['🌤️','Überwiegend klar'],
+      2:['⛅','Teilweise bewölkt'], 3:['☁️','Bedeckt'],
+      45:['🌫️','Nebel'], 48:['🌫️','Nebel'],
+      51:['🌦️','Leichter Nieselregen'], 53:['🌦️','Nieselregen'],
+      55:['🌧️','Starker Nieselregen'], 61:['🌧️','Leichter Regen'],
+      63:['🌧️','Regen'], 65:['🌧️','Starker Regen'],
+      71:['🌨️','Leichter Schneefall'], 73:['🌨️','Schneefall'],
+      75:['❄️','Starker Schneefall'], 80:['🌦️','Regenschauer'],
+      81:['🌧️','Regenschauer'], 82:['⛈️','Starke Regenschauer'],
+      95:['⛈️','Gewitter'], 96:['⛈️','Gewitter mit Hagel'],
+      99:['⛈️','Starkes Gewitter']
+    };
+    return map[code] || ['🌡️','Wetterlage'];
+  }
+
+  function renderWeather(w) {
+    if (!w?.current) {
+      $('weatherNow').textContent = 'Wetterdaten derzeit nicht verfügbar.';
+      $('weatherSummary').textContent = 'Daten derzeit nicht verfügbar';
+      return;
+    }
+
+    const c = w.current, daily = w.daily || {}, desc = weatherCode(c.weather_code);
+    $('weatherPlace').textContent = data.location?.name || 'Kamp-Lintfort';
+    $('weatherSummary').textContent = `${Math.round(c.temperature_2m)}°C · ${desc[1]}`;
+    $('weatherIcon').textContent = desc[0];
+
+    $('weatherNow').innerHTML =
+      `<div class="temp">${Math.round(c.temperature_2m)}°<span>C</span></div>
+       <div class="weather-desc">${esc(desc[1])}<br>
+       <span class="muted">Gefühlt ${Math.round(c.apparent_temperature)}°C · Wind ${Math.round(c.wind_speed_10m)} km/h</span></div>`;
+
+    const days = daily.time || [];
+    $('weatherDays').innerHTML = days.slice(0, 3).map((d, i) => {
+      const x = weatherCode(daily.weather_code?.[i]);
+      return `<div class="day">
+        <span>${new Intl.DateTimeFormat('de-DE', {weekday:'short'}).format(new Date(d + 'T12:00:00'))}</span>
+        <b>${x[0]} ${Math.round(daily.temperature_2m_max?.[i] ?? 0)}°</b>
+        <small>${Math.round(daily.temperature_2m_min?.[i] ?? 0)}° · Regen ${daily.precipitation_probability_max?.[i] ?? '–'}%</small>
+      </div>`;
+    }).join('');
+  }
+
+  function renderWarnings() {
+    const list = data?.warnings || [];
+    $('warningSummary').textContent = list.length
+      ? `${list.length} Warnung(en) gemeldet`
+      : (data?.warningError ? 'Status nicht verfügbar' : 'Keine Warnung gemeldet');
+
+    if (!list.length) {
+      $('warnings').innerHTML = `<div class="no-warning">${
+        data?.warningError
+          ? '⚠ ' + esc(data.warningError)
+          : '✓ Keine Warnung vom angebundenen Dienst gemeldet.'
+      }</div>
+      <p class="small-text">Warnungen bitte zusätzlich beim
+      <a href="https://www.dwd.de/DE/wetter/warnungen_gemeinden/warnWetter_node.html"
+      target="_blank" rel="noopener">DWD</a> prüfen.</p>`;
+      return;
+    }
+
+    $('warnings').innerHTML = list.slice(0, 8).map(w => `
+      <div class="warning">
+        <b>${esc(w.headline)}</b>
+        <p>${esc(w.description || 'Bitte Details beim DWD prüfen.')}</p>
+        <small>Warnstufe ${esc(w.level)}${
+          w.end ? ' · bis ' + esc(new Date(w.end * 1000).toLocaleString('de-DE')) : ''
+        }</small>
+      </div>`).join('');
+  }
+
+  function renderFeeds() {
+    const feeds = data?.feeds || [];
+    $('feedStatus').innerHTML = feeds.map(f => `
+      <div class="feed-row">
+        <span class="feed-dot ${f.ok ? 'ok' : 'bad'}"></span>
+        <span title="${esc(f.category || '')}">
+          ${esc(f.name)}
+          <small class="feed-last">${
+            f.checkedAt ? 'Geprüft ' + esc(fmt(Date.parse(f.checkedAt) / 1000)) : ''
+          }</small>
+        </span>
+        <small>${f.ok ? `${f.count} Meldungen` : 'Fehler'}</small>
+      </div>`).join('') || 'Keine Feed-Informationen.';
+  }
+
+  function renderDynamicCategories() {
+    const host = $('categories');
+    if (!host || !data) return;
+
+    const existing = new Set(
+      [...host.querySelectorAll('[data-category]')].map(b => b.dataset.category)
+    );
+
+    const categories = [...new Set(
+      (data.items || []).map(n => n.category).filter(Boolean)
+    )].sort((a, b) => a.localeCompare(b, 'de'));
+
+    categories.forEach(cat => {
+      if (existing.has(cat)) return;
+      const b = document.createElement('button');
+      b.className = 'category';
+      b.dataset.category = cat;
+      b.textContent = cat;
+      host.appendChild(b);
+    });
+  }
+
+  function renderNews() {
+    const all = data?.items || [];
+    const q = $('search').value.trim().toLocaleLowerCase('de-DE');
+    const sort = $('sort').value;
+
+    let filtered = all.filter(n =>
+      (selected === 'Alle' || n.category === selected) &&
+      (!q || [n.title, n.description, n.source, n.category]
+        .join(' ').toLocaleLowerCase('de-DE').includes(q))
+    );
+
+    filtered.sort((a, b) =>
+      sort === 'new' ? b.timestamp - a.timestamp : a.timestamp - b.timestamp
+    );
+
+    $('resultCount').textContent = `${filtered.length} Meldungen`;
+
+    $('news').innerHTML = filtered.slice(0, visibleCount).map(n => `
+      <article class="news-card">
+        <div class="news-meta">
+          <span class="pill">${esc(n.category)}</span>
+          <span>${esc(n.source)}</span>
+          <time datetime="${esc(n.date)}">${esc(fmt(n.timestamp))}</time>
+        </div>
+        <h3><a href="${esc(n.url)}" target="_blank" rel="noopener noreferrer">${esc(n.title)}</a></h3>
+        ${n.description ? `<p>${esc(n.description)}</p>` : ''}
+        <a class="read-link" href="${esc(n.url)}" target="_blank" rel="noopener noreferrer">Originalmeldung öffnen ↗</a>
+      </article>`).join('') ||
+      '<div class="empty">Keine passenden Meldungen gefunden. Filter oder Suchbegriff ändern.</div>';
+
+    $('loadMore').hidden = filtered.length <= visibleCount;
+    $('loadMore').textContent = `Weitere Meldungen (${Math.max(0, filtered.length - visibleCount)})`;
+
+    tickerItems = all.slice(0, 40);
+    if (tickerIndex >= tickerItems.length) tickerIndex = 0;
+    renderTicker();
+  }
+
+  function renderTicker() {
+    const el = $('tickerText');
+
+    if (!tickerItems.length) {
+      el.textContent = 'Noch keine Meldungen im Cache – bitte Cronjob ausführen.';
+      return;
+    }
+
+    const content = tickerItems.map(n =>
+      `<span class="ticker-item"><b>${esc(n.category)}</b> ${esc(n.title)}
+      <a href="${esc(n.url)}" target="_blank" rel="noopener">↗</a></span>`
+    ).join('<span class="ticker-separator"> • </span>');
+
+    el.innerHTML = content + '<span class="ticker-separator"> • </span>' + content;
+    el.classList.toggle('paused', paused);
+  }
+
+  async function load() {
+    $('status').textContent = 'Aktualisiere Ansicht …';
+
+    try {
+      const r = await fetch('api.php?v=' + Date.now(), {cache:'no-store'});
+      if (!r.ok) throw Error('Cache fehlt');
+
+      data = await r.json();
+
+      $('updated').textContent = 'Datenstand: ' +
+        new Date(data.updatedAt).toLocaleTimeString('de-DE', {hour:'2-digit', minute:'2-digit'});
+
+      $('footerTime').textContent = 'Letzte Serveraktualisierung ' +
+        new Date(data.updatedAt).toLocaleString('de-DE');
+
+      $('status').textContent = 'Cache verfügbar';
+
+      renderWeather(data.weather);
+      renderWarnings();
+      renderFeeds();
+      renderDynamicCategories();
+      renderNews();
+    } catch (e) {
+      $('status').textContent = 'Noch nicht eingerichtet';
+      $('news').innerHTML = '<div class="empty"><b>Noch keine Cache-Datei vorhanden.</b><br>Bitte cron.php einmalig über den Cronjob oder per PHP-CLI ausführen. Details stehen in README.md.</div>';
+    }
+  }
+
+  $('categories').addEventListener('click', e => {
+    const b = e.target.closest('[data-category]');
+    if (!b) return;
+
+    selected = b.dataset.category;
+    document.querySelectorAll('.category').forEach(x =>
+      x.classList.toggle('active', x === b)
+    );
+
+    visibleCount = 30;
+    renderNews();
+  });
+
+  $('search').addEventListener('input', () => {
+    visibleCount = 30;
+    renderNews();
+  });
+
+  $('sort').addEventListener('change', renderNews);
+  $('loadMore').addEventListener('click', () => {
+    visibleCount += 30;
+    renderNews();
+  });
+
+  $('refresh').addEventListener('click', load);
+
+  $('tickerPause').addEventListener('click', () => {
+    paused = !paused;
+    $('tickerPause').textContent = paused ? '▶' : 'Ⅱ';
+    $('tickerText').classList.toggle('paused', paused);
+  });
+
+  $('themeToggle').addEventListener('click', () => {
+    const dark = document.documentElement.dataset.theme !== 'dark';
+    document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+
+    try {
+      localStorage.setItem('newscenter-theme', dark ? 'dark' : 'light');
+    } catch (e) {}
+  });
+
+  try {
+    const t = localStorage.getItem('newscenter-theme');
+    if (t) document.documentElement.dataset.theme = t;
+  } catch (e) {}
+
+  const applyTickerSettings = () => {
+    const speed = Number($('tickerSpeed')?.value || 100);
+    const size = Number($('tickerSize')?.value || 17);
+
+    document.documentElement.style.setProperty('--ticker-duration', `${speed}s`);
+    document.documentElement.style.setProperty('--ticker-font-size', `${size}px`);
+
+    try {
+      localStorage.setItem('newscenter-ticker-speed', String(speed));
+      localStorage.setItem('newscenter-ticker-size', String(size));
+    } catch (e) {}
+  };
+
+  try {
+    const speed = localStorage.getItem('newscenter-ticker-speed');
+    const size = localStorage.getItem('newscenter-ticker-size');
+
+    if (speed && $('tickerSpeed')) $('tickerSpeed').value = speed;
+    if (size && $('tickerSize')) $('tickerSize').value = size;
+  } catch (e) {}
+
+  $('tickerSpeed')?.addEventListener('change', applyTickerSettings);
+  $('tickerSize')?.addEventListener('change', applyTickerSettings);
+  applyTickerSettings();
+
   // Auf kleinen Bildschirmen Zusatzbereiche standardmäßig geschlossen halten.
-  if(window.matchMedia('(max-width: 620px)').matches)document.querySelectorAll('.utility-panel').forEach(d=>d.open=false);
-  load(); setInterval(load,60000);
+  if (window.matchMedia('(max-width: 620px)').matches) {
+    document.querySelectorAll('.utility-panel').forEach(d => d.open = false);
+    const fd = $('filtersDisclosure');
+    if (fd) fd.open = false;
+  }
+
+  load();
+  setInterval(load, 60000);
 })();
