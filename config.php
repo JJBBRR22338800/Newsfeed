@@ -27,6 +27,6 @@ return [
         ['name'=>'Google News – Energiepreise','category'=>'Finanzen','url'=>'https://news.google.com/rss/search?q=Energiepreise+Deutschland&hl=de&gl=DE&ceid=DE:de'],
     ],
     // DWD-API-Proxy der Open-Source-Community; für Warnungen nicht als alleinige Notfallquelle verwenden.
-    'dwd_warnings_url' => 'https://dwd.api.proxy.bund.dev/v30/warnings/alerts/json',
+    'dwd_warnings_url' => 'https://s3.eu-central-1.amazonaws.com/app-prod-static.warnwetter.de/v16/gemeinde_warnings_v2.json',
     'cache_file' => __DIR__ . '/data/cache.json',
 ];
