@@ -1,0 +1,4 @@
+Options -Indexes
+<FilesMatch "^(config\.php|cron\.php|README\.md)$">
+  Require all denied
+</FilesMatch>
